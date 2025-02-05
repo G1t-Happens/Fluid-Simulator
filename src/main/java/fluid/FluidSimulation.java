@@ -16,11 +16,6 @@ import java.util.stream.IntStream;
  * - Interactive fluid dynamics simulation via mouse (Left-click: Add density/momentum, Right-click: Reset)
  * - High resolution (e.g., N = 256) with parallel computation (Jacobi iteration)
  * - Swing-based visualization of the density field as a grayscale image
- * <p>
- * This example demonstrates:
- * - Use of final, constants, and meaningful names
- * - Parallel processing using Java 8 Streams
- * - Clear separation of simulation logic, rendering, and event handling
  */
 public class FluidSimulation extends JPanel implements MouseListener, MouseMotionListener {
 
