@@ -68,7 +68,7 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
 
         // Start the timer (~60 FPS)
         int delay = 1000 / 60;
-        Timer timer = new Timer(delay, e -> {
+        Timer timer = new Timer(delay, _ -> {
             step();
             repaint();
         });
@@ -158,21 +158,20 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
 
     /**
      * Solves the linear equation system using a parallelized Jacobi iteration.
+     * This function is used in the diffusion and projection steps to maintain stability.
      *
-     * @param b  Type of the field
-     * @param x  Target array
-     * @param x0 Source array
-     * @param a  Parameter a
-     * @param c  Parameter c
+     * @param b  Type of the field (0 = Scalar, 1 = X-Velocity, 2 = Y-Velocity)
+     * @param x  Target array (resulting field)
+     * @param x0 Source array (previous state)
+     * @param a  Coefficient (computed from diffusion or projection parameters)
+     * @param c  Normalization factor (ensures numerical stability)
      */
     private void linSolve(final int b, final double[][] x, final double[][] x0, final double a, final double c) {
         double[][] xNew = new double[SIZE][SIZE];
         for (int k = 0; k < LINEAR_SOLVER_ITERATIONS; k++) {
-            final double A = a;
-            final double C = c;
             IntStream.rangeClosed(1, N).parallel().forEach(i -> {
                 for (int j = 1; j <= N; j++) {
-                    xNew[i][j] = (x0[i][j] + A * (x[i - 1][j] + x[i + 1][j] + x[i][j - 1] + x[i][j + 1])) / C;
+                    xNew[i][j] = (x0[i][j] + a * (x[i - 1][j] + x[i + 1][j] + x[i][j - 1] + x[i][j + 1])) / c;
                 }
             });
             setBnd(b, xNew);
@@ -183,6 +182,7 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
 
     /**
      * Advection step: Transports the field d along the velocity fields u and v.
+     * The method clamps the interpolated values to ensure they remain within valid boundaries.
      *
      * @param b  Type of the field
      * @param d  Target array
@@ -196,8 +196,8 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
             for (int j = 1; j <= N; j++) {
                 double x = i - dt0 * u[i][j];
                 double y = j - dt0 * v[i][j];
-                x = clamp(x, 0.5, N + 0.5);
-                y = clamp(y, 0.5, N + 0.5);
+                x = Math.clamp(x, 0.5, N + 0.5);
+                y = Math.clamp(y, 0.5, N + 0.5);
                 int i0 = (int) x;
                 int i1 = i0 + 1;
                 int j0 = (int) y;
@@ -243,8 +243,11 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
     /**
      * Sets the boundary conditions for a field.
      *
-     * @param b Type of the field (0 = Scalar, 1 = x-component, 2 = y-component)
-     * @param x Field for which the boundary conditions should be set
+     * @param b Field type:
+     *          0 = Scalar field (e.g., density),
+     *          1 = X-component of velocity (negates at vertical boundaries),
+     *          2 = Y-component of velocity (negates at horizontal boundaries).
+     * @param x The field for which the boundary conditions should be set.
      */
     private void setBnd(final int b, final double[][] x) {
         for (int i = 1; i <= N; i++) {
@@ -270,18 +273,6 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
     }
 
     /**
-     * Helper method: Clamps a value between min and max.
-     *
-     * @param value The value to be clamped
-     * @param min   Minimum value
-     * @param max   Maximum value
-     * @return The clamped value
-     */
-    private double clamp(final double value, final double min, final double max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
-    /**
      * Overrides paintComponent to render the density field as a grayscale image.
      *
      * @param g The Graphics object
@@ -298,7 +289,7 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
         for (int i = 1; i <= N; i++) {
             for (int j = 1; j <= N; j++) {
                 float d = (float) density[i][j];
-                d = Math.min(Math.max(d, 0), 1);
+                d = Math.clamp(d, 0, 1);
                 int c = (int) (d * 255);
                 g2d.setColor(new Color(c, c, c));
                 g2d.fillRect((int) ((i - 1) * cellWidth), (int) ((j - 1) * cellHeight), (int) Math.ceil(cellWidth), (int) Math.ceil(cellHeight));
@@ -316,14 +307,13 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
     private int[] toGridCoordinates(final int x, final int y) {
         int i = (int) ((x / (double) getWidth()) * N) + 1;
         int j = (int) ((y / (double) getHeight()) * N) + 1;
-        i = Math.max(1, Math.min(i, N));
-        j = Math.max(1, Math.min(j, N));
+        i = Math.clamp(i, 1, N);
+        j = Math.clamp(j, 1, N);
         return new int[]{i, j};
     }
 
 
     // --- Mouse events: Left click: Add density/momentum, Right click: Reset ---
-
     @Override
     public void mousePressed(final MouseEvent e) {
         if (SwingUtilities.isRightMouseButton(e)) {
@@ -384,7 +374,8 @@ public class FluidSimulation extends JPanel implements MouseListener, MouseMotio
     }
 
     /**
-     * Setzt alle Simulationsfelder zurück.
+     * Resets all simulation fields to their initial state.
+     * This clears density, velocity, and previous states.
      */
     private void resetSimulation() {
         clearArray(density);
